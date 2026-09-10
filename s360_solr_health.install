@@ -1,0 +1,47 @@
+<?php
+
+/**
+ * @file
+ * Install, update and uninstall functions for the S360 Solr Health module.
+ */
+
+use Drupal\s360_solr_health\SolrConsole;
+
+/**
+ * Implements hook_requirements().
+ *
+ * Puts every Solr-backed index on the status report with its tracker counts
+ * and the live document count from this environment's core. A database
+ * cloned from another environment carries that environment's tracker, so
+ * "indexed" can read full while Solr is empty; that is the case this exists
+ * to catch before anyone searches.
+ */
+function s360_solr_health_requirements(string $phase): array {
+  $requirements = [];
+  if ($phase !== 'runtime') {
+    return $requirements;
+  }
+
+  /** @var \Drupal\s360_solr_health\SolrConsole $console */
+  $console = \Drupal::service('s360_solr_health.console');
+  foreach ($console->summary() as $id => $row) {
+    $severity = match ($row['state']) {
+      SolrConsole::STATE_OK => REQUIREMENT_OK,
+      SolrConsole::STATE_BACKLOG, SolrConsole::STATE_DISABLED => REQUIREMENT_INFO,
+      SolrConsole::STATE_UNREACHABLE, SolrConsole::STATE_ERROR => REQUIREMENT_ERROR,
+      default => REQUIREMENT_WARNING,
+    };
+    $requirements['s360_solr_health_' . $id] = [
+      'title' => t('Solr index: @label', ['@label' => $row['label']]),
+      'value' => t('@tracked tracked, @indexed indexed, @solr in Solr', [
+        '@tracked' => $row['tracked'] ?? '—',
+        '@indexed' => $row['indexed'] ?? '—',
+        '@solr' => $row['solr_docs'] ?? '—',
+      ]),
+      'description' => $row['message'],
+      'severity' => $severity,
+    ];
+  }
+
+  return $requirements;
+}

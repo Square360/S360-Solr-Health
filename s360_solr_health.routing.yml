@@ -1,0 +1,7 @@
+s360_solr_health.report:
+  path: '/admin/reports/solr-health'
+  defaults:
+    _form: '\Drupal\s360_solr_health\Form\SolrConsoleForm'
+    _title: 'Solr health'
+  requirements:
+    _permission: 'use s360 solr health console'

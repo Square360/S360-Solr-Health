@@ -1,0 +1,4 @@
+use s360 solr health console:
+  title: 'Use the Solr health console'
+  description: 'Run read-only select queries against this environment''s Solr core and see tracker-versus-Solr counts per index.'
+  restrict access: true

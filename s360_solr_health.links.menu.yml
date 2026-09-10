@@ -1,0 +1,6 @@
+s360_solr_health.report:
+  title: 'Solr health'
+  description: 'Read-only queries against this environment''s Solr core, with tracker-versus-Solr counts per index.'
+  parent: system.admin_reports
+  route_name: s360_solr_health.report
+  weight: 50

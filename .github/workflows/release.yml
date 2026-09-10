@@ -1,0 +1,17 @@
+name: Release
+
+# On every push to main, analyse conventional-commit messages, bump the version,
+# tag it (v-prefixed), update CHANGELOG.md, and publish a GitHub Release.
+# The published Release fires satis-publish.yml, which rebuilds packages.square360.com.
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  semantic_release:
+    uses: Square360/shared-workflows/.github/workflows/reusable-semantic-release.yml@724a5c4e6f54ceac8183fc1064268204a9c8484b  # v4.0.0
+    with:
+      release_branches: '["main"]'
+    secrets:
+      OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}

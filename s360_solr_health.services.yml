@@ -1,0 +1,6 @@
+services:
+  s360_solr_health.console:
+    class: Drupal\s360_solr_health\SolrConsole
+    arguments:
+      - '@entity_type.manager'
+      - '@string_translation'
