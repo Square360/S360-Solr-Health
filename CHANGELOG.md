@@ -1,3 +1,9 @@
+# Release 1.0.1 (2026-09-10)
+
+### Continuous Integration
+
+* verify the right package on publish; pin shared-workflows to v4.10.1 (c9f8f37)
+
 # Release 1.0.0 (2026-09-10)
 
 ### Features
