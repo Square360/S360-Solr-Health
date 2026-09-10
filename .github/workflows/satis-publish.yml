@@ -9,9 +9,9 @@ on:
 
 jobs:
   satis_publish:
-    uses: Square360/shared-workflows/.github/workflows/reusable-satis-publish.yml@0969f4585bd199092d4c9f392dac7cb8a7ceba8c  # v4.0.1
+    uses: Square360/shared-workflows/.github/workflows/reusable-satis-publish.yml@7dbeb55b3b3d9da8e806c0596046e32b6d12d58a  # v4.10.1
     with:
-      verify_package: square360/s360_webform_guard
+      verify_package: square360/s360_solr_health
       verify_version: ${{ github.event.release.tag_name }}
     secrets:
       OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
