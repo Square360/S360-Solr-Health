@@ -173,6 +173,7 @@ final class SolrConsoleForm extends FormBase {
           $row['server'],
           $row['tracked'] ?? '—',
           $row['indexed'] ?? '—',
+          $row['excluded'] ?? '—',
           $row['solr_docs'] ?? '—',
           $row['message'],
         ],
@@ -184,7 +185,7 @@ final class SolrConsoleForm extends FormBase {
       '#type' => 'details',
       '#title' => $this->t('Index health'),
       '#open' => TRUE,
-      '#description' => $this->t('Tracker counts come from the database; the Solr count is a live query against this environment\'s core. A database cloned from another environment carries that environment\'s tracker, so "indexed" can read full while Solr is empty.'),
+      '#description' => $this->t('Tracker counts come from the database; the Solr count is a live query against this environment\'s core. A database cloned from another environment carries that environment\'s tracker, so "indexed" can read full while Solr is empty. "Excluded" counts unpublished items the entity_status processor keeps out of Solr; Solr is expected to hold indexed minus excluded.'),
       'table' => [
         '#type' => 'table',
         '#header' => [
@@ -192,6 +193,7 @@ final class SolrConsoleForm extends FormBase {
           $this->t('Server'),
           $this->t('Tracked'),
           $this->t('Indexed'),
+          $this->t('Excluded'),
           $this->t('In Solr'),
           $this->t('Status'),
         ],

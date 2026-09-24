@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Drupal\s360_solr_health;
 
+use Drupal\Core\Database\Connection;
+use Drupal\Core\Entity\EntityPublishedInterface;
 use Drupal\Core\Entity\EntityTypeManagerInterface;
 use Drupal\Core\StringTranslation\StringTranslationTrait;
 use Drupal\Core\StringTranslation\TranslationInterface;
 use Drupal\search_api\IndexInterface;
 use Drupal\search_api\ServerInterface;
+use Drupal\search_api\Tracker\TrackerPluginBase;
+use Drupal\user\UserInterface;
 
 /**
  * Read-only access to this environment's Solr core.
@@ -32,6 +36,7 @@ final class SolrConsole {
   public function __construct(
     protected EntityTypeManagerInterface $entityTypeManager,
     TranslationInterface $string_translation,
+    protected Connection $database,
   ) {
     $this->setStringTranslation($string_translation);
   }
@@ -62,8 +67,9 @@ final class SolrConsole {
    *
    * @return array
    *   Rows keyed by index ID with: label, server, server_available, enabled,
-   *   tracked, indexed, solr_docs (int|null), error (string|null), state
-   *   (one of the STATE_* constants), message (translatable).
+   *   tracked, indexed, excluded (int|null), solr_docs (int|null), error
+   *   (string|null), state (one of the STATE_* constants), message
+   *   (translatable).
    */
   public function summary(): array {
     $rows = [];
@@ -87,6 +93,7 @@ final class SolrConsole {
         'enabled' => $index->status(),
         'tracked' => NULL,
         'indexed' => NULL,
+        'excluded' => NULL,
         'solr_docs' => NULL,
         'error' => NULL,
       ];
@@ -95,6 +102,7 @@ final class SolrConsole {
         $tracker = $index->getTrackerInstance();
         $row['tracked'] = $tracker->getTotalItemsCount();
         $row['indexed'] = $tracker->getIndexedItemsCount();
+        $row['excluded'] = $this->excludedCount($index);
       }
       catch (\Throwable $e) {
         $row['error'] = 'Tracker: ' . $e->getMessage();
@@ -130,28 +138,133 @@ final class SolrConsole {
   protected function assess(array $row): array {
     $tracked = $row['tracked'] ?? 0;
     $indexed = $row['indexed'] ?? 0;
+    $excluded = $row['excluded'] ?? 0;
+    // Items the entity_status processor drops at index time are tracked and
+    // marked indexed but never written to Solr, so Solr is expected to hold
+    // that many fewer documents than the tracker's indexed count.
+    $expected = max(0, $indexed - $excluded);
     $solr = $row['solr_docs'];
     return match (TRUE) {
       !$row['server_available'] => [self::STATE_UNREACHABLE, $this->t('Server unreachable')],
       $row['error'] !== NULL => [self::STATE_ERROR, $row['error']],
       !$row['enabled'] => [self::STATE_DISABLED, $this->t('Index disabled')],
-      $solr === 0 && $tracked > 0 => [
+      $solr === 0 && $tracked - $excluded > 0 => [
         self::STATE_EMPTY,
         $this->t('Solr holds no documents for this index while the tracker has @n item(s). Typical after a database clone from another environment: run a full reindex.', ['@n' => $tracked]),
       ],
-      $solr !== NULL && $solr < $indexed => [
+      $solr !== NULL && $solr < $expected => [
         self::STATE_SHORT,
-        $this->t('Solr holds @solr document(s) but the tracker claims @indexed indexed. Reindex to reconcile.', [
-          '@solr' => $solr,
-          '@indexed' => $indexed,
-        ]),
+        $excluded > 0
+          ? $this->t('Solr holds @solr document(s) but expects @expected (@indexed indexed, less @excluded unpublished excluded by entity_status). Reindex to reconcile.', [
+            '@solr' => $solr,
+            '@expected' => $expected,
+            '@indexed' => $indexed,
+            '@excluded' => $excluded,
+          ])
+          : $this->t('Solr holds @solr document(s) but the tracker claims @indexed indexed. Reindex to reconcile.', [
+            '@solr' => $solr,
+            '@indexed' => $indexed,
+          ]),
       ],
       $tracked > $indexed => [
         self::STATE_BACKLOG,
         $this->t('@n item(s) waiting to be indexed.', ['@n' => $tracked - $indexed]),
       ],
+      $excluded > 0 => [
+        self::STATE_OK,
+        $this->t('In sync (@n unpublished item(s) excluded by entity_status)', ['@n' => $excluded]),
+      ],
       default => [self::STATE_OK, $this->t('In sync')],
     };
+  }
+
+  /**
+   * Counts indexed items the entity_status processor keeps out of Solr.
+   *
+   * The processor drops unpublished entities and blocked users in
+   * alterIndexedItems(), but the tracker still marks them indexed. Each
+   * tracked item is one translation, so publication is checked per language.
+   *
+   * @return int|null
+   *   The count; 0 when the processor is off; NULL when the tracker does not
+   *   keep its items in the search_api_item table (count unknown).
+   */
+  public function excludedCount(IndexInterface $index): ?int {
+    if (!$index->isValidProcessor('entity_status')) {
+      return 0;
+    }
+    if (!$index->getTrackerInstance() instanceof TrackerPluginBase) {
+      return NULL;
+    }
+
+    $excluded = 0;
+    foreach ($index->getDatasources() as $datasource_id => $datasource) {
+      $entity_type_id = $datasource->getEntityTypeId();
+      if (!$entity_type_id) {
+        continue;
+      }
+      $definition = $this->entityTypeManager->getDefinition($entity_type_id, FALSE);
+      if (!$definition) {
+        continue;
+      }
+      if ($entity_type_id === 'user') {
+        $status_field = 'status';
+      }
+      elseif ($definition->entityClassImplements(EntityPublishedInterface::class) && $definition->hasKey('published')) {
+        $status_field = $definition->getKey('published');
+      }
+      else {
+        continue;
+      }
+
+      // Tracked item IDs look like "entity:node/123:en".
+      $tracked = [];
+      $item_ids = $this->database->select('search_api_item', 'sai')
+        ->fields('sai', ['item_id'])
+        ->condition('sai.index_id', $index->id())
+        ->condition('sai.datasource', $datasource_id)
+        ->condition('sai.status', TrackerPluginBase::STATUS_INDEXED)
+        ->execute()
+        ->fetchCol();
+      foreach ($item_ids as $item_id) {
+        $raw = substr($item_id, strlen($datasource_id) + 1);
+        $colon = strrpos($raw, ':');
+        if ($colon === FALSE) {
+          continue;
+        }
+        $tracked[substr($raw, 0, $colon)][] = substr($raw, $colon + 1);
+      }
+      if (!$tracked) {
+        continue;
+      }
+
+      // Candidates: entities with any unpublished translation. Usually few.
+      $storage = $this->entityTypeManager->getStorage($entity_type_id);
+      $candidates = $storage->getQuery()
+        ->accessCheck(FALSE)
+        ->condition($status_field, 0)
+        ->execute();
+      $candidates = array_intersect(array_map('strval', $candidates), array_map('strval', array_keys($tracked)));
+      foreach (array_chunk($candidates, 200) as $chunk) {
+        foreach ($storage->loadMultiple($chunk) as $id => $entity) {
+          foreach ($tracked[(string) $id] ?? [] as $langcode) {
+            $translation = ($entity->isTranslatable() && $entity->hasTranslation($langcode)) ? $entity->getTranslation($langcode) : $entity;
+            $enabled = TRUE;
+            if ($translation instanceof EntityPublishedInterface) {
+              $enabled = $translation->isPublished();
+            }
+            elseif ($translation instanceof UserInterface) {
+              $enabled = $translation->isActive();
+            }
+            if (!$enabled) {
+              $excluded++;
+            }
+          }
+        }
+        $storage->resetCache($chunk);
+      }
+    }
+    return $excluded;
   }
 
   /**

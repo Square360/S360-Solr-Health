@@ -4,3 +4,4 @@ services:
     arguments:
       - '@entity_type.manager'
       - '@string_translation'
+      - '@database'
