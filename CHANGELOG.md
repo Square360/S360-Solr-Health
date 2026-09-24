@@ -1,3 +1,9 @@
+# Release 1.0.2 (2026-09-24)
+
+### Bug Fixes
+
+* (): account for entity_status exclusions instead of warning "short" (027143b)
+
 # Release 1.0.1 (2026-09-10)
 
 ### Continuous Integration
