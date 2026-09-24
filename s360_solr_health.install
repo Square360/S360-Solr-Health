@@ -33,9 +33,10 @@ function s360_solr_health_requirements(string $phase): array {
     };
     $requirements['s360_solr_health_' . $id] = [
       'title' => t('Solr index: @label', ['@label' => $row['label']]),
-      'value' => t('@tracked tracked, @indexed indexed, @solr in Solr', [
+      'value' => t('@tracked tracked, @indexed indexed, @excluded excluded, @solr in Solr', [
         '@tracked' => $row['tracked'] ?? '—',
         '@indexed' => $row['indexed'] ?? '—',
+        '@excluded' => $row['excluded'] ?? '—',
         '@solr' => $row['solr_docs'] ?? '—',
       ]),
       'description' => $row['message'],

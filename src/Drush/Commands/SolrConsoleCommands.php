@@ -43,11 +43,12 @@ class SolrConsoleCommands extends DrushCommands {
     'server' => 'Server',
     'tracked' => 'Tracked',
     'indexed' => 'Indexed',
+    'excluded' => 'Excluded',
     'solr' => 'In Solr',
     'state' => 'State',
     'message' => 'Message',
   ])]
-  #[CLI\DefaultTableFields(fields: ['index', 'tracked', 'indexed', 'solr', 'state', 'message'])]
+  #[CLI\DefaultTableFields(fields: ['index', 'tracked', 'indexed', 'excluded', 'solr', 'state', 'message'])]
   public function status(): RowsOfFields {
     $rows = [];
     $bad = FALSE;
@@ -57,6 +58,7 @@ class SolrConsoleCommands extends DrushCommands {
         'server' => $row['server'],
         'tracked' => $row['tracked'] ?? '',
         'indexed' => $row['indexed'] ?? '',
+        'excluded' => $row['excluded'] ?? '',
         'solr' => $row['solr_docs'] ?? '',
         'state' => $row['state'],
         'message' => (string) $row['message'],

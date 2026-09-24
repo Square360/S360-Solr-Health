@@ -13,7 +13,11 @@ Nothing in Drupal said so until a search page came back blank.
 1. **Status report rows** (`/admin/reports/status`): one per Solr-backed
    index, showing tracked / indexed / in-Solr counts. A warning when Solr is
    empty while the tracker has items (the post-clone shape) or holds fewer
-   documents than the tracker claims; an error when the server is unreachable.
+   documents than expected; an error when the server is unreachable.
+   *Expected* is the tracker's indexed count less **excluded**: items the
+   `entity_status` processor drops at index time (unpublished content, blocked
+   users). The tracker marks those indexed but never writes them to Solr, so
+   they're counted and shown rather than warned about.
 2. **`drush s360:solr:health`**: the same table in the terminal, for release
    checklists and post-clone steps. `--format=json` for scripts.
 3. **`/admin/reports/solr-health`** (permission *Use the Solr health console*,
