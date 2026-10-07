@@ -1,3 +1,10 @@
+# Release 1.0.3 (2026-10-07)
+
+### Continuous Integration
+
+* follow shared-workflows @v4 instead of an exact pin (fbce9fe)
+* release with the Square360 CI GitHub App (shared-workflows v4.14.0) (a9dcfc3)
+
 # Release 1.0.2 (2026-09-24)
 
 ### Bug Fixes
