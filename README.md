@@ -12,8 +12,15 @@ Nothing in Drupal said so until a search page came back blank.
 
 1. **Status report rows** (`/admin/reports/status`): one per Solr-backed
    index, showing tracked / indexed / in-Solr counts. A warning when Solr is
-   empty while the tracker has items (the post-clone shape) or holds fewer
-   documents than expected; an error when the server is unreachable.
+   empty while the tracker has items (the post-clone shape), holds fewer
+   documents than expected, or holds more (`over`: stale documents); an error
+   when the server is unreachable. "In Solr" uses the same filter the
+   backend puts on searches. Documents for the same index under another
+   `search_api_solr` site hash, left in the core by an earlier database, are
+   counted separately ("Other hash") and raise `over` with the delete-by-query
+   that removes them. With the server's *site hash* option off (the
+   `search_api_solr` default, and Pantheon Search's), searches see those
+   copies too, so result counts and pagers include them.
    *Expected* is the tracker's indexed count less **excluded**: items the
    `entity_status` processor drops at index time (unpublished content, blocked
    users). The tracker marks those indexed but never writes them to Solr, so

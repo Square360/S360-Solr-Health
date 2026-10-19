@@ -28,6 +28,7 @@ final class SolrConsole {
   public const STATE_OK = 'ok';
   public const STATE_EMPTY = 'empty';
   public const STATE_SHORT = 'short';
+  public const STATE_OVER = 'over';
   public const STATE_BACKLOG = 'backlog';
   public const STATE_DISABLED = 'disabled';
   public const STATE_UNREACHABLE = 'unreachable';
@@ -65,11 +66,17 @@ final class SolrConsole {
    * Every failure is returned in the row rather than thrown, so one broken
    * index cannot blank the whole summary.
    *
+   * Solr counts use the backend's own index filter: the targeted index ID
+   * and, when the server filters by site hash, the targeted site hash.
+   * Documents for the same index under another hash, left by an earlier
+   * database or environment, are counted apart.
+   *
    * @return array
-   *   Rows keyed by index ID with: label, server, server_available, enabled,
-   *   tracked, indexed, excluded (int|null), solr_docs (int|null), error
-   *   (string|null), state (one of the STATE_* constants), message
-   *   (translatable).
+   *   Rows keyed by index ID with: id, label, server, server_available,
+   *   enabled, tracked, indexed, excluded (int|null), solr_docs (int|null),
+   *   solr_other (int|null), solr_index_id (string|null), site_hash
+   *   (string|null), hash_filtered (bool), error (string|null),
+   *   state (one of the STATE_* constants), message (translatable).
    */
   public function summary(): array {
     $rows = [];
@@ -87,6 +94,7 @@ final class SolrConsole {
       }
 
       $row = [
+        'id' => $id,
         'label' => $index->label(),
         'server' => $server->label(),
         'server_available' => $availability[$server_id],
@@ -95,6 +103,10 @@ final class SolrConsole {
         'indexed' => NULL,
         'excluded' => NULL,
         'solr_docs' => NULL,
+        'solr_other' => NULL,
+        'solr_index_id' => NULL,
+        'site_hash' => NULL,
+        'hash_filtered' => FALSE,
         'error' => NULL,
       ];
 
@@ -110,13 +122,20 @@ final class SolrConsole {
 
       if ($availability[$server_id]) {
         try {
-          $response = $this->select($server, [
-            'q' => '*:*',
-            'fq' => ['index_id:' . $id],
-            'rows' => 0,
-            'wt' => 'json',
-          ]);
-          $row['solr_docs'] = (int) ($response['response']['numFound'] ?? 0);
+          // Same filter the backend puts on every search
+          // (getIndexFilterQueryString), so solr_docs is what searches see.
+          // Documents under another site hash, left by an earlier database,
+          // are counted apart either way: with the server's site_hash option
+          // off (the search_api_solr default) searches see them too.
+          /** @var \Drupal\search_api_solr\SolrBackendInterface $backend */
+          $backend = $server->getBackend();
+          $row['solr_index_id'] = $backend->getTargetedIndexId($index);
+          $row['site_hash'] = $backend->getTargetedSiteHash($index);
+          $row['hash_filtered'] = !empty($backend->getConfiguration()['site_hash']);
+          $index_fq = 'index_id:"' . $row['solr_index_id'] . '"';
+          $hash_fq = 'hash:"' . $row['site_hash'] . '"';
+          $row['solr_docs'] = $this->count($server, $row['hash_filtered'] ? [$index_fq, $hash_fq] : [$index_fq]);
+          $row['solr_other'] = $this->count($server, [$index_fq, '-' . $hash_fq]);
         }
         catch (\Throwable $e) {
           $row['error'] = trim(($row['error'] ? $row['error'] . ' ' : '') . 'Solr: ' . $e->getMessage());
@@ -143,7 +162,12 @@ final class SolrConsole {
     // marked indexed but never written to Solr, so Solr is expected to hold
     // that many fewer documents than the tracker's indexed count.
     $expected = max(0, $indexed - $excluded);
+    // Solr can legitimately hold up to the tracker's full count while a
+    // reindex is in progress (reset-tracker leaves the old documents in place),
+    // so a surplus is only stale beyond tracked less excluded.
+    $ceiling = max(0, $tracked - $excluded);
     $solr = $row['solr_docs'];
+    $other = $row['solr_other'] ?? 0;
     return match (TRUE) {
       !$row['server_available'] => [self::STATE_UNREACHABLE, $this->t('Server unreachable')],
       $row['error'] !== NULL => [self::STATE_ERROR, $row['error']],
@@ -165,6 +189,27 @@ final class SolrConsole {
             '@solr' => $solr,
             '@indexed' => $indexed,
           ]),
+      ],
+      $other > 0 => [
+        self::STATE_OVER,
+        $this->t('Solr also holds @n document(s) for this index under another site hash, left by an earlier database or environment. @impact Remove them with a delete-by-query on: index_id:@index AND -hash:@hash', [
+          '@n' => $other,
+          '@impact' => !empty($row['hash_filtered'])
+            ? $this->t('Searches ignore them, but they skew counts.')
+            : $this->t('This server does not filter searches by site hash, so searches see them too: result counts and pagers include the copies.'),
+          '@index' => $row['solr_index_id'] ?? '',
+          '@hash' => $row['site_hash'] ?? '',
+        ]),
+      ],
+      $solr !== NULL && $solr > $ceiling => [
+        self::STATE_OVER,
+        $this->t('Solr holds @solr document(s) but the tracker has only @ceiling to send (@tracked tracked, less @excluded excluded): @n stale document(s), usually items deleted in Drupal but not removed from Solr. Clear the index and reindex to reconcile.', [
+          '@solr' => $solr,
+          '@ceiling' => $ceiling,
+          '@tracked' => $tracked,
+          '@excluded' => $excluded,
+          '@n' => $solr - $ceiling,
+        ]),
       ],
       $tracked > $indexed => [
         self::STATE_BACKLOG,
@@ -300,6 +345,19 @@ final class SolrConsole {
       'server' => $server->label(),
     ];
     return $response;
+  }
+
+  /**
+   * Counts the documents matching a set of filter queries.
+   */
+  protected function count(ServerInterface $server, array $fq): int {
+    $response = $this->select($server, [
+      'q' => '*:*',
+      'fq' => $fq,
+      'rows' => 0,
+      'wt' => 'json',
+    ]);
+    return (int) ($response['response']['numFound'] ?? 0);
   }
 
   /**
