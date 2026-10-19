@@ -51,7 +51,7 @@ final class SolrConsoleForm extends FormBase {
     $form['query'] = [
       '#type' => 'details',
       '#title' => $this->t('Query'),
-      '#open' => TRUE,
+      '#open' => FALSE,
     ];
     $form['query']['index_id'] = [
       '#type' => 'select',
