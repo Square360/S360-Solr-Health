@@ -1,3 +1,13 @@
+# Release 1.1.0 (2026-10-19)
+
+### Features
+
+* (): over state for surplus and other-site-hash documents (1fa0d32)
+
+### Build System
+
+* move shared-workflows callers from SHA pins to @v4 (shared-workflows#179) (#5) (4d8e726)
+
 # Release 1.0.3 (2026-10-07)
 
 ### Continuous Integration
