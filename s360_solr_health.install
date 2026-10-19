@@ -38,7 +38,7 @@ function s360_solr_health_requirements(string $phase): array {
         '@indexed' => $row['indexed'] ?? '—',
         '@excluded' => $row['excluded'] ?? '—',
         '@solr' => $row['solr_docs'] ?? '—',
-      ]),
+      ]) . (($row['solr_other'] ?? 0) > 0 ? ' ' . t('(+@n under another site hash)', ['@n' => $row['solr_other']]) : ''),
       'description' => $row['message'],
       'severity' => $severity,
     ];

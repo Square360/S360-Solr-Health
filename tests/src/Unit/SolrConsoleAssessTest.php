@@ -33,6 +33,9 @@ class SolrConsoleAssessTest extends UnitTestCase {
       'error' => NULL,
       'enabled' => TRUE,
       'excluded' => 0,
+      'solr_other' => 0,
+      'id' => 'site_search',
+      'site_hash' => 'abc123',
     ])[0];
   }
 
@@ -102,6 +105,67 @@ class SolrConsoleAssessTest extends UnitTestCase {
       'indexed' => 5,
       'excluded' => 5,
       'solr_docs' => 0,
+    ]));
+  }
+
+  /**
+   * Documents under another site hash raise over, even with a clean count.
+   *
+   * The nj211-drupal shape (NJ2P-829, 2026-10-19) once the count filters by
+   * the current hash: 303 of this site's documents, 303 stale copies.
+   *
+   * @covers ::assess
+   */
+  public function testOtherHashIsOver(): void {
+    $this->assertSame(SolrConsole::STATE_OVER, $this->assess([
+      'tracked' => 648,
+      'indexed' => 648,
+      'excluded' => 345,
+      'solr_docs' => 303,
+      'solr_other' => 303,
+    ]));
+  }
+
+  /**
+   * The same shape on a server that does not filter by hash (our default).
+   *
+   * @covers ::assess
+   */
+  public function testOtherHashUnfilteredIsOver(): void {
+    $this->assertSame(SolrConsole::STATE_OVER, $this->assess([
+      'tracked' => 648,
+      'indexed' => 648,
+      'excluded' => 345,
+      'solr_docs' => 606,
+      'solr_other' => 303,
+      'hash_filtered' => FALSE,
+    ]));
+  }
+
+  /**
+   * More of this site's documents than the tracker could send is over.
+   *
+   * @covers ::assess
+   */
+  public function testSurplusBeyondTrackedIsOver(): void {
+    $this->assertSame(SolrConsole::STATE_OVER, $this->assess([
+      'tracked' => 648,
+      'indexed' => 648,
+      'excluded' => 345,
+      'solr_docs' => 606,
+    ]));
+  }
+
+  /**
+   * A reindex after reset-tracker leaves old documents in place: backlog.
+   *
+   * @covers ::assess
+   */
+  public function testReindexInProgressIsBacklog(): void {
+    $this->assertSame(SolrConsole::STATE_BACKLOG, $this->assess([
+      'tracked' => 100,
+      'indexed' => 0,
+      'solr_docs' => 100,
     ]));
   }
 
